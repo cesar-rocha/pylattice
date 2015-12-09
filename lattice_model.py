@@ -142,15 +142,15 @@ class LatticeModel():
         self.tc += 1
         self.t += self.dt
 
-    def run_with_snapshots(self, tsnapstart=0., tsnapint=10):
+    def run_with_snapshots(self, tsnapstart=0., tsnap=1):
         """Run the model forward, yielding to user code at specified intervals.
             """
         
-        tsnapints = np.ceil(tsnapint/self.dt)
+        tsnapint = np.ceil(tsnap/self.dt)
         
         while(self.t < self.tmax):
             self._step_forward()
-            if self.t>=tsnapstart and (self.tc%tsnapints)==0:
+            if self.t>=tsnapstart and (self.tc%tsnapint)==0:
                 yield self.t
         return
                 
@@ -163,7 +163,6 @@ class LatticeModel():
         # here is where we calculate diagnostics
         if (self.t>=self.dt) and (self.t>=self.tavestart):
             self._increment_diagnostics()
-
 
 
     # diagnostic stuff follow
