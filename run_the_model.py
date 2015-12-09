@@ -35,5 +35,20 @@ m.th = np.exp(-(r**2))
 #    plt.ioff()
 #
 
-m.run()
+#m.run()
+
+def plot_snap(model):
+    plt.clf()
+    plt.imshow(model.th)
+    plt.clim([-75,75.])
+    plt.xticks([])
+    plt.yticks([])
+    plt.title(str(model.t))
+    plt.pause(0.01)
+    plt.draw()
+
+
+for snapshot in m.run_with_snapshots(tsnapstart=0, tsnap=m.dt):
+
+    plot_snap(m)
 
