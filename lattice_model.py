@@ -38,6 +38,8 @@ class LatticeModel():
 
         self._initialize_grid()
 
+        self._init_velocity()
+
         self._initialize_diagnostics()
 
     def _initialize_grid(self):
@@ -71,23 +73,34 @@ class LatticeModel():
         self.wv2 = self.k**2 + self.l**2
         self.wv = np.sqrt( self.wv2 )
 
-    def _velocity(self,nmodes=100,power=3.5,nmin=2):
+    def _velocity(self):
 
-        phase = 2*pi*np.random.rand(2,nmodes)
+        phase = 2*pi*np.random.rand(2,self.nmodes)
         phi, psi = phase[0], phase[1]
-     
-        nmax = nmin+nmodes
-        n = np.arange(nmin,nmax)[np.newaxis,...]    
-        An = n**(-power/2.)
+    
+        Yn = self.n*self.y[...,np.newaxis] + phase[0][np.newaxis,...]
+        Xn = self.n*self.x[...,np.newaxis] + phase[1][np.newaxis,...]
 
-        Yn = n*self.y[...,np.newaxis] + phase[0][np.newaxis,...]
-        Xn = n*self.x[...,np.newaxis] + phase[1][np.newaxis,...]
-
-        u = (An*cos(Yn*self.dl)).sum(axis=1)
-        v = (An*cos(Xn*self.dk)).sum(axis=1)
+        u = (self.An*cos(Yn*self.dl)).sum(axis=1)
+        v = (self.An*cos(Xn*self.dk)).sum(axis=1)
 
         self.u = u[...,np.newaxis]
         self.v = v[np.newaxis,...]
+
+    def _init_velocity(self,nmodes=100,power=3.5,nmin=2):
+
+        self.nmodes = nmodes
+        nmax = nmin+nmodes
+        self.n = np.arange(nmin,nmax)[np.newaxis,...]    
+        An = (self.n/nmin)**(-power/2.)
+        urms =  1.
+        self.An = (2*urms*An)/(An**2).sum()
+
+        # estimate the Batchelor scale
+        S = np.sqrt( ((self.An*self.n*self.dk)**2).sum()/2. )
+        self.lb = np.sqrt(self.kappa/S)
+
+        #assert self.lb > self.dx, "**Warning: Batchelor scale not resolved."
 
     def _advect(self,direction='x'):
         """ Advect th on a lattice given u and v,
@@ -189,7 +202,13 @@ class LatticeModel():
         self.add_diagnostic('thbar',
             description='x-averaged tracer',
             function= (lambda self: self.th.mean(axis=1))
+        )
+            
+        self.add_diagnostic('fluxy',
+            description='x-averaged, y-direction tracer flux',
+            function= (lambda self: (self.v*self.th).mean(axis=1))
         ) 
+
        
     def _set_active_diagnostics(self, diagnostics_list):
         for d in self.diagnostics:
