@@ -1,4 +1,4 @@
-
+from __future__ import division
 import numpy as np
 from numpy import pi, cos, sin, exp
 
@@ -46,10 +46,12 @@ class LatticeModel():
         """ Initialize lattice and spectral space grid """
 
         # physical space grids
-        self.dx, self.dy = self.Lx/self.nx, self.Ly/self.ny
+        self.dx, self.dy = self.Lx/(self.nx), self.Ly/(self.ny)
 
         self.x = np.linspace(0.,self.Lx-self.dx,self.nx)
         self.y = np.linspace(0.,self.Ly-self.dy,self.ny)
+
+        self.xi, self.yi = np.meshgrid(self.x,self.y)
 
         self.ix, self.iy = np.meshgrid(range(self.nx),
                                        range(self.ny))
@@ -87,14 +89,18 @@ class LatticeModel():
         self.u = u[...,np.newaxis]
         self.v = v[np.newaxis,...]
 
-    def _init_velocity(self,nmodes=100,power=3.5,nmin=2):
+    def _init_velocity(self,nmodes=1024,power=3.5,nmin=5):
 
         self.nmodes = nmodes
         nmax = nmin+nmodes
-        self.n = np.arange(nmin,nmax)[np.newaxis,...]    
+        self.n = np.arange(nmin,nmax)[np.newaxis,...]
         An = (self.n/nmin)**(-power/2.)
         urms =  1.
-        self.An = (2*urms*An)/(An**2).sum()
+        N = 2*urms/( np.sqrt( ((self.n/nmin)**-power).sum() ) )
+        self.An = N*An 
+        #self.An = np.sqrt(2.)
+
+        #self.An = 2*urms
 
         # estimate the Batchelor scale
         S = np.sqrt( ((self.An*self.n*self.dk)**2).sum()/2. )
@@ -132,11 +138,20 @@ class LatticeModel():
 
         self.th = np.fft.irfft2(self.thh)
 
-    def _forcing(self,half=True):
-        if half:
-            self.th = self.th + self.dt_2*np.cos(self.y)[...,np.newaxis]
-        else:
-            self.th = self.th + self.dt*np.cos(self.y*self.dl)[...,np.newaxis]
+    def _source(self,half=True,direction='x'):
+        if direction == 'x':
+            self.th += self.dt_2*np.cos(self.dl*self.y)[...,np.newaxis]
+        elif direction == 'y':
+
+            # this is not working
+            #v =  np.ma.masked_equal(self.v, 0.)
+            #self.forcey = (np.sin(self.dl*(self.y+v*self.dt_2))-np.sin(self.dl*(self.y)))/(self.dl*v)
+            #self.forcey[v.mask] = self.dt_2*np.cos(self.dl*self.y)
+            #self.th += self.forcey
+
+            # a brutal way
+            self.th += self.dt_2*np.cos(self.dl*self.y)[...,np.newaxis]
+    
 
     def _step_forward(self):
 
@@ -144,11 +159,15 @@ class LatticeModel():
 
         self._advect(direction='x')
 
+        self._source(direction='x')
+
+        #self._diffuse(half=True)
+
         self._advect(direction='y')
 
-        self._diffuse(half='False')
+        self._source(direction='y')
 
-        self._forcing()
+        self._diffuse(half=False)
 
         self._calc_diagnostics()
 
@@ -194,6 +213,7 @@ class LatticeModel():
 
     def _setup_diagnostics(self):
         """Diagnostics setup"""
+
         self.add_diagnostic('var',
             description='Tracer variance',
             function= (lambda self: self.spec_var(self.thh))
