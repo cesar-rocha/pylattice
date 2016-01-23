@@ -15,6 +15,10 @@ class LatticeModel():
                 tmax=1000,
                 tavestart = 500,
                 kappa=1.e-5,
+                urms = 1.,
+                power = 3.5,
+                nmin = 5.,
+                source=True,
                 diagnostics_list='all'):
 
         if ny is None: ny = nx
@@ -34,6 +38,12 @@ class LatticeModel():
         
         self.kappa = kappa
         
+        self.nmin = nmin
+        self.power = power
+        self.urms = urms
+
+        self.source=source
+
         self.diagnostics_list = diagnostics_list
 
         self._initialize_grid()
@@ -71,7 +81,8 @@ class LatticeModel():
 
         # constant for spectral normalizations
         self.M = self.nx*self.ny
-        
+        self.M2 = self.M**2
+
         self.wv2 = self.k**2 + self.l**2
         self.wv = np.sqrt( self.wv2 )
 
@@ -89,14 +100,13 @@ class LatticeModel():
         self.u = u[...,np.newaxis]
         self.v = v[np.newaxis,...]
 
-    def _init_velocity(self,nmodes=1024,power=3.5,nmin=5):
+    def _init_velocity(self,nmodes=1024):
 
         self.nmodes = nmodes
-        nmax = nmin+nmodes
-        self.n = np.arange(nmin,nmax)[np.newaxis,...]
-        An = (self.n/nmin)**(-power/2.)
-        urms =  1.
-        N = 2*urms/( np.sqrt( ((self.n/nmin)**-power).sum() ) )
+        nmax = self.nmin+nmodes
+        self.n = np.arange(self.nmin,nmax)[np.newaxis,...]
+        An = (self.n/self.nmin)**(-self.power/2.)
+        N = 2*self.urms/( np.sqrt( ((self.n/self.nmin)**-self.power).sum() ) )
         self.An = N*An 
         #self.An = np.sqrt(2.)
 
@@ -158,16 +168,23 @@ class LatticeModel():
         self._velocity()
 
         self._advect(direction='x')
+   
+        self._calc_diagnostics()
 
-        self._source(direction='x')
+        if self.source:
+            self._source(direction='x')
 
-        #self._diffuse(half=True)
+        self._diffuse(half=True)
 
         self._advect(direction='y')
 
-        self._source(direction='y')
+        self._calc_diagnostics()
 
-        self._diffuse(half=False)
+        if self.source:
+            self._source(direction='y')
+
+        #self._diffuse(half=False)
+        self._diffuse(half=True)
 
         self._calc_diagnostics()
 
@@ -221,15 +238,41 @@ class LatticeModel():
     
         self.add_diagnostic('thbar',
             description='x-averaged tracer',
-            function= (lambda self: self.th.mean(axis=1))
+            function= (lambda self: self.thm)
+        )
+
+        self.add_diagnostic('grad2_th_bar',
+            description='x-averaged gradient square of th',
+            function= (lambda self: self.gradth2m)
+        )
+
+        self.add_diagnostic('vth2m',
+            description='x-averaged triple advective term v th2',
+            function= (lambda self: self.vth2m)
+            )
+
+        self.add_diagnostic('th2m',
+            description='x-averaged  th2',
+            function= (lambda self: self.th2m)
+            )
+
+        self.add_diagnostic('vthm',
+            description='x-averaged, y-direction tracer flux',
+            function= (lambda self: (self.v*self.tha).mean(axis=1))
         )
             
         self.add_diagnostic('fluxy',
             description='x-averaged, y-direction tracer flux',
             function= (lambda self: (self.v*self.th).mean(axis=1))
+        )
+
+        self.add_diagnostic('spec',
+            description='spec of anomalies about x-averaged flow',
+            function= (lambda self: np.abs(np.fft.rfft2(
+                        self.th-self.th.mean(axis=1)[...,np.newaxis]))**2/self.M2)
         ) 
 
-       
+      
     def _set_active_diagnostics(self, diagnostics_list):
         for d in self.diagnostics:
             self.diagnostics[d]['active'] == (d in diagnostics_list)
@@ -265,7 +308,7 @@ class LatticeModel():
     def _increment_diagnostics(self):
         # compute intermediate quantities needed for some diagnostics
         
-        #self._calc_derived_fields()
+        self._calc_derived_fields()
         
         for dname in self.diagnostics:
             if self.diagnostics[dname]['active']:
@@ -275,7 +318,39 @@ class LatticeModel():
                 else:
                     self.diagnostics[dname]['value'] += res
                 self.diagnostics[dname]['count'] += 1
-                
+
+    def _calc_derived_fields(self):
+
+        """ Calculate derived field necessary for diagnostics """
+
+        # x-averaged tracer field
+        self.thm = self.th.mean(axis=1)
+        #self.thmh = np.fft.rfft(self.thm)
+        #self.thm_y = np.fft.irfft(1j*self.kk*self.thmh)
+
+        # anomaly about the x-averaged field
+        self.tha = self.th-self.thm[...,np.newaxis]
+        self.thah = np.fft.rfft2(self.tha)
+
+        # x-averaged gradient squared
+        gradx = np.fft.irfft2(1j*self.k*self.thah)
+        grady = np.fft.irfft2(1j*self.l*self.thah)
+        self.gradth2m = (gradx**2 + grady**2).mean(axis=1)
+
+        # Osborn-Cox amplification factor
+        #self.thm_y = 4*np.sin(self.y*self.dl)
+        #thm_y = self.block_average(self.thm_y)
+        #gradth2m = self.block_average(self.gradth2m)
+
+        #self.A2_OC = gradth2m / thm_y**2
+        #self.A2_OC[thm_y < 1.e-14] = np.nan
+
+        # triple term
+        self.vth2m = (self.v*(self.tha**2)).mean(axis=1)
+
+        # diff transport
+        self.th2m = (self.tha**2).mean(axis=1)
+
     def get_diagnostic(self, dname):
         return (self.diagnostics[dname]['value'] / 
                 self.diagnostics[dname]['count'])
@@ -288,7 +363,16 @@ class LatticeModel():
         var_dens[...,-1] = var_dens[...,-1]/2.
         return var_dens.sum()
 
+    def block_average(self,A, nblocks = 256):
+        """ Block average A onto A blocks """
 
+        nave = self.nx/nblocks
+        Ab = np.empty(nblocks)
+
+        for i in range(nblocks):
+            Ab[i] = A[i*nave:(i+1)*nave].mean()
+
+        return Ab
 
 #grad2 = (wv2*(np.abs(thh)**2)).sum()/(N**2)
 # a test initial concentration
