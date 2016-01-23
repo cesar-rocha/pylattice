@@ -5,91 +5,96 @@ import lattice_model as model
 
 def plot_snap(model):
     plt.clf()
-    plt.imshow(model.th)
-    plt.clim([-6,6.])
+    #plt.imshow(model.th)
+    plt.pcolor(model.th)
+    #plt.clim([-1.,1.])
     plt.xticks([])
     plt.yticks([])
     plt.title(str(model.t))
     plt.pause(0.01)
     plt.draw()
 
-m = model.LatticeModel(kappa=1.e-4,dt=1.,nx=1024,tmax=1000,tavestart=200)
+#m.run()
+
+def calc_Koc(model):
+    # calculate the Koc
+    thm = model.get_diagnostic('thbar')
+    thmh = np.fft.rfft(thm)
+    thay = np.fft.irfft(1j*m.kk*thmh)
+    cby2 = thay**2
+
+    grad2 =  model.get_diagnostic('grad2_th_bar')
+
+    Koc = (grad2/cby2)*model.kappa
+    D = (model.urms**2)*model.dt/4.
+
+    return Koc, D
+
+m = model.LatticeModel(kappa=1.e-5,urms=5.e-2,dt=1.,nx=2048,nmin=5.,
+                        tmax=20000,tavestart=10000, power=4.,source=True)
 
 # initial concentration
-x0,y0 = np.pi,np.pi
-r = np.sqrt((m.x-x0)[np.newaxis,...]**2+(m.y-y0)[...,np.newaxis]**2)
-m.th = np.exp(-(r**2))*0
+
+print m.dx/m.lb
 
 m.th = np.cos(m.y)[...,np.newaxis] + np.zeros(m.nx)[np.newaxis,...]
 
 t, var = [], []
 maxth = []
+
 for snapshot in m.run_with_snapshots(tsnapstart=0, tsnap=m.dt):
 
     #plot_snap(m)
     var.append(m.spec_var(m.thh))
     t.append(m.t)
-    maxth.append(m.th.mean(axis=1).max())
+    #maxth.append(m.th.mean(axis=1).max())
 
-    if m.t > m.tavestart:
-        try:
-            thbar = np.vstack([thbar,m.th.mean(axis=1)])
-        except:
-            thbar = m.th.mean(axis=1)
-            
-
+    #if m.t > m.tavestart:
+    #    try:
+    #        thbar = np.vstack([thbar,m.th.mean(axis=1)])
+    #    except:
+    #        thbar = m.th.mean(axis=1)
 
 #m.run()
 
-## plotting
-plt.figure()
-plt.plot(t,var,'k')
-plt.xlabel('time')
-plt.ylabel('tracer variance')
-plt.title(r'$p=3.5$, $nmin=5$, $nmax=1024$')
-plt.savefig('variance_time_series_nmin_5')
+Koc, D = calc_Koc(m)
 
-plt.figure()
+def variance_budget(model):
 
-theory = 4*np.cos(m.y)/m.dt
-numerics = m.get_diagnostic('thbar')
+    # calculate the Koc
+    thm = model.get_diagnostic('thbar')
+    thmh = np.fft.rfft(thm)
+    thmy = np.fft.irfft(1j*m.kk*thmh)
+    cby2 = thmy**2
 
-plt.plot(m.y,thbar.T[...,::25],linewidth=1.,alpha=.25,color='.5')
-plt.plot(m.y,theory,color='b',linewidth=2,label='Theory')
-plt.plot(m.y,numerics,color='m',linewidth=2,label='Numerics')
-plt.ylim(-5,5)
+    th2 = model.get_diagnostic('th2m')/2.
+    th2h = np.fft.rfft(th2)
+    th2yy = np.fft.irfft(-((model.kk)**2)*th2h)
 
-plt.xlabel('$y$')
-plt.ylabel(r'$<\theta>$')
-plt.legend(loc=3)
-plt.xlim(0,2*np.pi)
-plt.xticks([0,np.pi/2.,np.pi,3*np.pi/2.,2*np.pi],[r'$0$',r'$\pi/2$',
-            r'$\pi$',r'$3 \pi/2$',r'$2 \pi$'])
-plt.title(r'$p=3.5$, $nmin=5$, $nmax=1024$')
-plt.savefig('x-averaged_tracer_nmin_5')
+    grad2 =  model.get_diagnostic('grad2_th_bar')
+    
+    vth2 = model.get_diagnostic('vth2m')
+    vth2h = np.fft.rfft(vth2)
+    vth2y = np.fft.irfft(1j*model.kk*vth2h)
 
-# the relative error
-f = np.abs(theory) < 1.e-7
-rel = (np.abs(theory-numerics)/theory)
-rel[f] = 0.
-rel = rel.std()
+    D = (model.urms**2)*model.dt/4.
+    Koc = (grad2/cby2)*model.kappa
 
+    #vthm = m.get_diagnostic('vthm')
 
-#ke = 1/8.
-#plt.figure()
-#for i in range(10):
-#    if i == 0:
-#        plt.plot(m.y,thbar[i*5]*np.exp(t[i*5]*ke),linewidth=3.,label='t='+str(i*5))
-#    else:
-#        plt.plot(m.y,thbar[i*5]*np.exp(t[i*5]*ke),linewidth=1.,label='t='+str(i*5))
-#
-#plt.xlabel('$y$')
-#plt.ylabel(r'$<\theta> \times \mathrm{e}^{\kappa_e t}$')
-#plt.legend(loc=9,ncol=3)
-#plt.xlim(0,2*np.pi)
-#plt.xticks([0,np.pi/2.,np.pi,3*np.pi/2.,2*np.pi],[r'$0$',r'$\pi/2$',
-#            r'$\pi$',r'$3 \pi/2$',r'$2 \pi$'])
-#plt.title(r'IVP')
-#plt.savefig('ivp_cbar')
-#
+    var_trans = -vth2y/4.
+    #eddy_diff = -vthm*np.sqrt(cby2)
+    eddy_diff2 = D*cby2
+    eddy_diff = eddy_diff2
+    
+    diff_trans = model.kappa*th2yy
+    diff = -model.kappa*grad2
+
+    return var_trans, eddy_diff, eddy_diff2,diff_trans, diff
+
+var_trans, eddy_diff, eddy_diff2, diff_trans, diff = variance_budget(m)
+
+np.savez('koc_4_dt_1',Koc=Koc,y=m.y,D=D,var_trans=var_trans,eddy_diff=eddy_diff,eddy_diff2=eddy_diff2,
+                    diff_trans=diff_trans,diff=diff,t=t,var=var)
+
 
