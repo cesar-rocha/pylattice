@@ -10,7 +10,7 @@ except ImportError:
     pass
 
 
-class LatticeModel():
+class LatticeModel(object):
     """ A generic two-dimensional lattice
         model of advection-diffusion 
         
@@ -27,7 +27,6 @@ class LatticeModel():
         urms:  root-mean-square of the velocity field (sets the energy level) [(length)^2/(time)^2]
         nmin:  minimum wavenumber for the eddy field [(unitless)]
         nmax:  maximum wavenumber for the eddy field [(unitless)]
-        source: flag for source (boolean)
         diagnostics_list: list of diagnostics to compute
         tavestart: time to start averaging diagnostics [(time)]
         cadence:  cadence to compute diagnostics [(time step)]
@@ -46,7 +45,6 @@ class LatticeModel():
                 power = 3.5,
                 nmin = 5,
                 nmax = 120,
-                source=True,
                 diagnostics_list='all',
                 tavestart = 500,
                 cadence = 5):
@@ -72,8 +70,6 @@ class LatticeModel():
         self.nmax = nmax
         self.power = power
         self.urms = urms
-
-        self.source=source
 
         self.diagnostics_list = diagnostics_list
 
@@ -114,21 +110,25 @@ class LatticeModel():
 
         # x-dir
         self._advect(direction='x',n=2)
+        self._source(direction='x',n=4)
         self._calc_diagnostics()
         self._diffuse(n=4)
         self._calc_diagnostics()
 
         self._advect(direction='x',n=2)
+        self._source(direction='x',n=4)
         self._calc_diagnostics()
         self._diffuse(n=4)
         self._calc_diagnostics()
 
         # y-dir
         self._advect(direction='y',n=2)
+        self._source(direction='y',n=4)
         self._calc_diagnostics()
         self._diffuse(n=4)
         self._calc_diagnostics()
         self._advect(direction='y',n=2)
+        self._source(direction='y',n=4)
         self._calc_diagnostics()
         self._diffuse(n=4)
         self._calc_diagnostics()
@@ -208,6 +208,13 @@ class LatticeModel():
         self.lb = np.sqrt(self.kappa/S)
 
         #assert self.lb > self.dx, "**Warning: Batchelor scale not resolved."
+
+    def _diffuse(self, n=1):
+        """ Diffusion """
+
+        self.thh = np.fft.rfft2(self.th)
+        self.thh = self.thh*exp(-(self.dt/n)*self.kappa*self.wv2)
+        self.th = np.fft.irfft2(self.thh)
 
     def _advect(self):
         raise NotImplementedError(

@@ -4,7 +4,19 @@ from numpy import pi
 
 class SourceModel(lattice_model.LatticeModel):
     """ A subclass that represents the advection-diffusion
-            model with a large-scale source """
+            model with a large-scale source 
+    
+        Attributes
+        ----------
+        source: flag for source (boolean)
+
+    """
+
+    def __init__(self, source=True, **kwargs):
+
+        self.source = source
+
+        super(SourceModel, self).__init__(**kwargs)
 
     def _advect(self,direction='x',n=1):
         """ Advect th on a lattice given u and v,
@@ -54,6 +66,13 @@ class GyModel(lattice_model.LatticeModel):
     """ A subclass that represents the advection-diffusion
             model with a basic state sustained by a linear
             mean constant mean gradient """
+
+    def __init__(self, G=1., **kwargs):
+
+        self.G = G
+
+        super(GyModel, self).__init__(**kwargs)
+
 
     def _advect(self,direction='x',n=1):
         """ Advect th on a lattice given u and v,
