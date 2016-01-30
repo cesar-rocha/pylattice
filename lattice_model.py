@@ -1,10 +1,38 @@
 from __future__ import division
 import numpy as np
 from numpy import pi, cos, sin, exp
+import logging
+
+try:
+    import pyfftw
+    pyfftw.interfaces.cache.enable() 
+except ImportError:
+    pass
+
 
 class LatticeModel():
-    """ A class that represents a two-dimensional lattice
-        model of advection-diffusion """
+    """ A generic two-dimensional lattice
+        model of advection-diffusion 
+        
+        Attributes
+        ----------
+
+        nx:    number of grid points in the x-direction (number of lattices)
+        ny:    number of grid points in the y-direction; if None, then ny = nx
+        Lx:    length of the domain in the x-direction
+        Ly:    length of the domain in the x-direction; if None, then Ly = Lx
+        dt:    eddy turnover time scale (the length of a renovating cycle) [(time)]
+        tmax:  maximum time of integration [(time)]
+        kappa: molecular diffusivity [(length)^2/(time)]
+        urms:  root-mean-square of the velocity field (sets the energy level) [(length)^2/(time)^2]
+        nmin:  minimum wavenumber for the eddy field [(unitless)]
+        nmax:  maximum wavenumber for the eddy field [(unitless)]
+        source: flag for source (boolean)
+        diagnostics_list: list of diagnostics to compute
+        tavestart: time to start averaging diagnostics [(time)]
+        cadence:  cadence to compute diagnostics [(time step)]
+
+        """
 
     def __init__(self,
                 nx=128,
@@ -13,13 +41,15 @@ class LatticeModel():
                 Ly=None,
                 dt=0.5,
                 tmax=1000,
-                tavestart = 500,
                 kappa=1.e-5,
                 urms = 1.,
                 power = 3.5,
-                nmin = 5.,
+                nmin = 5,
+                nmax = 120,
                 source=True,
-                diagnostics_list='all'):
+                diagnostics_list='all',
+                tavestart = 500,
+                cadence = 5):
 
         if ny is None: ny = nx
         if Ly is None: Ly = Lx
@@ -39,6 +69,7 @@ class LatticeModel():
         self.kappa = kappa
         
         self.nmin = nmin
+        self.nmax = nmax
         self.power = power
         self.urms = urms
 
@@ -50,12 +81,77 @@ class LatticeModel():
 
         self._init_velocity()
 
+        self._allocate_variables()
+
         self._initialize_diagnostics()
+    
+    def run_with_snapshots(self, tsnapstart=0., tsnap=1):
+        """Run the model forward, yielding to user code at specified intervals.
+            """
+        tsnapint = np.ceil(tsnap/self.dt)
+        
+        while(self.t < self.tmax):
+            self._step_forward()
+            if self.t>=tsnapstart and (self.tc%tsnapint)==0:
+                yield self.t
+        return
+                
+    def run(self):
+        """Run the model forward without stopping until the end."""
+        while(self.t < self.tmax): 
+            self._step_forward()
+
+    #
+    # private methods
+    #
+
+    def _step_forward(self):
+
+        # renovate velocity field
+        self._velocity()
+
+        # use a while loop here...
+
+        # x-dir
+        self._advect(direction='x',n=2)
+        self._calc_diagnostics()
+        self._diffuse(n=4)
+        self._calc_diagnostics()
+
+        self._advect(direction='x',n=2)
+        self._calc_diagnostics()
+        self._diffuse(n=4)
+        self._calc_diagnostics()
+
+        # y-dir
+        self._advect(direction='y',n=2)
+        self._calc_diagnostics()
+        self._diffuse(n=4)
+        self._calc_diagnostics()
+        self._advect(direction='y',n=2)
+        self._calc_diagnostics()
+        self._diffuse(n=4)
+        self._calc_diagnostics()
+
+        self.tc += 1
+        self.t += self.dt
+
+    def _allocate_variables(self):
+        """ Allocate variables in memory """
+
+        dtype_real = np.dtype('float64')            
+        dtype_cplx = np.dtype('complex128')
+        shape_real = (self.ny, self.nx)
+        shape_cplx = (self.ny, self.nx/2+1)
+            
+        # tracer concentration
+        self.th  = np.zeros(shape_real, dtype_real)
+        self.thh = np.zeros(shape_cplx, dtype_cplx)
 
     def _initialize_grid(self):
         """ Initialize lattice and spectral space grid """
 
-        # physical space grids
+        # physical space grids (the lattice)
         self.dx, self.dy = self.Lx/(self.nx), self.Ly/(self.ny)
 
         self.x = np.linspace(0.,self.Lx-self.dx,self.nx)
@@ -88,7 +184,7 @@ class LatticeModel():
 
     def _velocity(self):
 
-        phase = 2*pi*np.random.rand(2,self.nmodes)
+        phase = 2*pi*np.random.rand(2,self.nmax-self.nmin)
         phi, psi = phase[0], phase[1]
     
         Yn = self.n*self.y[...,np.newaxis] + phase[0][np.newaxis,...]
@@ -100,17 +196,12 @@ class LatticeModel():
         self.u = u[...,np.newaxis]
         self.v = v[np.newaxis,...]
 
-    def _init_velocity(self,nmodes=1024):
+    def _init_velocity(self):
 
-        self.nmodes = nmodes
-        nmax = self.nmin+nmodes
-        self.n = np.arange(self.nmin,nmax)[np.newaxis,...]
+        self.n = np.arange(self.nmin,self.nmax)[np.newaxis,...]
         An = (self.n/self.nmin)**(-self.power/2.)
         N = 2*self.urms/( np.sqrt( ((self.n/self.nmin)**-self.power).sum() ) )
         self.An = N*An 
-        #self.An = np.sqrt(2.)
-
-        #self.An = 2*urms
 
         # estimate the Batchelor scale
         S = np.sqrt( ((self.An*self.n*self.dk)**2).sum()/2. )
@@ -118,103 +209,20 @@ class LatticeModel():
 
         #assert self.lb > self.dx, "**Warning: Batchelor scale not resolved."
 
-    def _advect(self,direction='x'):
-        """ Advect th on a lattice given u and v,
-            and the current index array ix, iy"""
+    def _advect(self):
+        raise NotImplementedError(
+            'needs to be implemented by Model subclass') 
 
-        if direction == 'x':
-            ix_new = self.ix.copy()
-            dindx = -np.round(self.u*self.dt_2/self.dx).astype(int)
-            ix_new  = self.ix + dindx 
-            ix_new[ix_new<0] = ix_new[ix_new<0] + self.nx
-            ix_new[ix_new>self.nx-1] = ix_new[ix_new>self.nx-1] - self.nx
-            self.th = self.th[self.iy,ix_new]
+    def _source(self):
+        raise NotImplementedError(
+            'needs to be implemented by Model subclass') 
 
-        elif direction == 'y':
-            iy_new = self.iy.copy()
-            dindy = -np.round(self.v*self.dt_2/self.dy).astype(int)
-            iy_new  = self.iy + dindy
-            iy_new[iy_new<0] = iy_new[iy_new<0] + self.ny
-            iy_new[iy_new>self.ny-1] = iy_new[iy_new>self.ny-1] - self.ny
-            self.th = self.th[iy_new,self.ix]
-
-    def _diffuse(self, half=True):
-        """ Diffusion """
-        self.thh = np.fft.rfft2(self.th)
-        if half:
-            self.thh = self.thh*exp(-self.dt_2*self.kappa*self.wv2)
-        else:
-            self.thh = self.thh*exp(-self.dt*self.kappa*self.wv2)
-
-        self.th = np.fft.irfft2(self.thh)
-
-    def _source(self,half=True,direction='x'):
-        if direction == 'x':
-            self.th += self.dt_2*np.cos(self.dl*self.y)[...,np.newaxis]
-        elif direction == 'y':
-
-            # this is not working
-            #v =  np.ma.masked_equal(self.v, 0.)
-            #self.forcey = (np.sin(self.dl*(self.y+v*self.dt_2))-np.sin(self.dl*(self.y)))/(self.dl*v)
-            #self.forcey[v.mask] = self.dt_2*np.cos(self.dl*self.y)
-            #self.th += self.forcey
-
-            # a brutal way
-            self.th += self.dt_2*np.cos(self.dl*self.y)[...,np.newaxis]
-    
-
-    def _step_forward(self):
-
-        self._velocity()
-
-        self._advect(direction='x')
-   
-        self._calc_diagnostics()
-
-        if self.source:
-            self._source(direction='x')
-
-        self._diffuse(half=True)
-
-        self._advect(direction='y')
-
-        self._calc_diagnostics()
-
-        if self.source:
-            self._source(direction='y')
-
-        #self._diffuse(half=False)
-        self._diffuse(half=True)
-
-        self._calc_diagnostics()
-
-        self.tc += 1
-        self.t += self.dt
-
-    def run_with_snapshots(self, tsnapstart=0., tsnap=1):
-        """Run the model forward, yielding to user code at specified intervals.
-            """
-        
-        tsnapint = np.ceil(tsnap/self.dt)
-        
-        while(self.t < self.tmax):
-            self._step_forward()
-            if self.t>=tsnapstart and (self.tc%tsnapint)==0:
-                yield self.t
-        return
-                
-    def run(self):
-        """Run the model forward without stopping until the end."""
-        while(self.t < self.tmax): 
-            self._step_forward()
+    ## diagnostic methods 
 
     def _calc_diagnostics(self):
-        # here is where we calculate diagnostics
         if (self.t>=self.dt) and (self.t>=self.tavestart):
             self._increment_diagnostics()
-
-
-    # diagnostic stuff follow
+         
     def _initialize_diagnostics(self):
         # Initialization for diagnotics
         self.diagnostics = dict()
@@ -271,7 +279,6 @@ class LatticeModel():
             function= (lambda self: np.abs(np.fft.rfft2(
                         self.th-self.th.mean(axis=1)[...,np.newaxis]))**2/self.M2)
         ) 
-
       
     def _set_active_diagnostics(self, diagnostics_list):
         for d in self.diagnostics:
@@ -306,7 +313,6 @@ class LatticeModel():
                  *(k,  d['description']))
            
     def _increment_diagnostics(self):
-        # compute intermediate quantities needed for some diagnostics
         
         self._calc_derived_fields()
         
@@ -325,8 +331,6 @@ class LatticeModel():
 
         # x-averaged tracer field
         self.thm = self.th.mean(axis=1)
-        #self.thmh = np.fft.rfft(self.thm)
-        #self.thm_y = np.fft.irfft(1j*self.kk*self.thmh)
 
         # anomaly about the x-averaged field
         self.tha = self.th-self.thm[...,np.newaxis]
@@ -337,14 +341,6 @@ class LatticeModel():
         grady = np.fft.irfft2(1j*self.l*self.thah)
         self.gradth2m = (gradx**2 + grady**2).mean(axis=1)
 
-        # Osborn-Cox amplification factor
-        #self.thm_y = 4*np.sin(self.y*self.dl)
-        #thm_y = self.block_average(self.thm_y)
-        #gradth2m = self.block_average(self.gradth2m)
-
-        #self.A2_OC = gradth2m / thm_y**2
-        #self.A2_OC[thm_y < 1.e-14] = np.nan
-
         # triple term
         self.vth2m = (self.v*(self.tha**2)).mean(axis=1)
 
@@ -354,6 +350,8 @@ class LatticeModel():
     def get_diagnostic(self, dname):
         return (self.diagnostics[dname]['value'] / 
                 self.diagnostics[dname]['count'])
+
+    ## utility methods
 
     def spec_var(self, ph):
         """ compute variance of p from Fourier coefficients ph """
@@ -373,13 +371,5 @@ class LatticeModel():
             Ab[i] = A[i*nave:(i+1)*nave].mean()
 
         return Ab
-
-#grad2 = (wv2*(np.abs(thh)**2)).sum()/(N**2)
-# a test initial concentration
-#x0,y0 = pi,pi
-#r = np.sqrt((x-x0)[np.newaxis,...]**2+(y-y0)[...,np.newaxis]**2)
-#th = np.zeros(N,N)
-#th = np.exp(-(r**2))
-
 
 
