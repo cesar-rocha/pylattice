@@ -4,7 +4,7 @@ def calc_Koc(model):
     # calculate the Koc
     thm = model.get_diagnostic('thbar')
     thmh = np.fft.rfft(thm)
-    thay = np.fft.irfft(1j*m.kk*thmh)
+    thay = np.fft.irfft(1j*model.kk*thmh)
     cby2 = thay**2
 
     grad2 =  model.get_diagnostic('grad2_th_bar')
@@ -22,7 +22,7 @@ def variance_budget(model):
     # calculate the Koc
     thm = model.get_diagnostic('thbar')
     thmh = np.fft.rfft(thm)
-    thmy = np.fft.irfft(1j*m.kk*thmh)
+    thmy = np.fft.irfft(1j*model.kk*thmh)
     cby2 = thmy**2
 
     cby2 = 1.
