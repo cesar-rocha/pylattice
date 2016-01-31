@@ -47,9 +47,12 @@ class LatticeModel(object):
                 nmax = 120,
                 diagnostics_list='all',
                 tavestart = 500,
-                cadence = 5,
+                diagcadence = 1,
                 fftw=True,
-                ntd=4):
+                ntd=4,
+                logfile=None,
+                loglevel=1,
+                printcadence = 10):
 
         if ny is None: ny = nx
         if Ly is None: Ly = Lx
@@ -65,7 +68,9 @@ class LatticeModel(object):
         self.tavestart = tavestart
         self.t = 0.
         self.tc = 0
-        
+        self.diagcadence = diagcadence
+        self.printcadence = printcadence
+
         self.kappa = kappa
         
         self.nmin = nmin
@@ -76,19 +81,27 @@ class LatticeModel(object):
         self.fftw = fftw
         self.ntd = ntd
 
+        self.logfile = logfile
+        self.loglevel=loglevel
+
         # initializations
         self.diagnostics_list = diagnostics_list
 
+        self._initialize_logger()
         self._initialize_fft()
-
         self._initialize_grid()
-
         self._init_velocity()
-
         self._allocate_variables()
-
         self._initialize_diagnostics()
-    
+
+        # some initial diagnostics
+        self.Pe = self.urms/(self.kappa*self.kmin)
+        self.dt = 1./(self.urms*self.kmin)
+        self.dt_2 = self.dt/2. 
+
+        self.logger.info('dx/lb = %3.2e', self.dx/self.lb)
+        self.logger.info('tau = %3.2e', self.dt)
+
     def run_with_snapshots(self, tsnapstart=0., tsnap=1):
         """Run the model forward, yielding to user code at specified intervals.
             """
@@ -110,6 +123,9 @@ class LatticeModel(object):
     #
 
     def _step_forward(self):
+
+        # status
+        self._print_status()
 
         # renovate velocity field
         self._velocity()
@@ -156,6 +172,30 @@ class LatticeModel(object):
         self.th  = np.zeros(shape_real, dtype_real)
         self.thh = np.zeros(shape_cplx, dtype_cplx)
 
+    # logger
+    def _initialize_logger(self):
+
+        self.logger = logging.getLogger(__name__)
+
+
+        if self.logfile:
+            fhandler = logging.FileHandler(filename=self.logfile, mode='w')
+        else:
+            fhandler = logging.StreamHandler()
+
+        formatter = logging.Formatter('%(levelname)s: %(message)s')
+
+        fhandler.setFormatter(formatter)
+
+        if not self.logger.handlers:
+            self.logger.addHandler(fhandler)
+
+        self.logger.setLevel(self.loglevel*10)
+        
+        # this prevents the logger to propagate into the ipython notebook log
+        self.logger.propagate = False   
+
+        self.logger.info(' Logger initialized')
 
     def _initialize_fft(self):
         # set up fft functions for use later
@@ -204,6 +244,10 @@ class LatticeModel(object):
         self.wv2 = self.k**2 + self.l**2
         self.wv = np.sqrt( self.wv2 )
 
+        # kmin and kmax
+        self.kmin = self.dk*self.nmin
+        self.kmax = self.dk*self.nmax
+
     def _velocity(self):
 
         phase = 2*pi*np.random.rand(2,self.nmax-self.nmin)
@@ -246,7 +290,17 @@ class LatticeModel(object):
         raise NotImplementedError(
             'needs to be implemented by Model subclass') 
 
+    def _print_status(self):
+        """Output some basic stats."""
+        if (self.loglevel) and ((self.tc % self.printcadence)==0):
+            self._calc_var()
+            self.logger.info('Step: %4i, Time: %3.2e, Variance: %3.2e'
+                    , self.tc,self.t,self.var)
+            
     ## diagnostic methods 
+
+    def _calc_var(self):
+        self.var = self.spec_var(self.thh)
 
     def _calc_diagnostics(self):
         if (self.t>=self.dt) and (self.t>=self.tavestart):
