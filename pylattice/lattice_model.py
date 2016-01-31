@@ -101,6 +101,7 @@ class LatticeModel(object):
 
         self.logger.info('dx/lb = %3.2e', self.dx/self.lb)
         self.logger.info('tau = %3.2e', self.dt)
+        self.logger.info('Pe = %3.2e', self.Pe)
 
     def run_with_snapshots(self, tsnapstart=0., tsnap=1):
         """Run the model forward, yielding to user code at specified intervals.
