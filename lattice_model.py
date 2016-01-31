@@ -47,7 +47,9 @@ class LatticeModel(object):
                 nmax = 120,
                 diagnostics_list='all',
                 tavestart = 500,
-                cadence = 5):
+                cadence = 5,
+                fftw=True,
+                ntd=4):
 
         if ny is None: ny = nx
         if Ly is None: Ly = Lx
@@ -71,7 +73,13 @@ class LatticeModel(object):
         self.power = power
         self.urms = urms
 
+        self.fftw = fftw
+        self.ntd = ntd
+
+        # initializations
         self.diagnostics_list = diagnostics_list
+
+        self._initialize_fft()
 
         self._initialize_grid()
 
@@ -148,6 +156,20 @@ class LatticeModel(object):
         self.th  = np.zeros(shape_real, dtype_real)
         self.thh = np.zeros(shape_cplx, dtype_cplx)
 
+
+    def _initialize_fft(self):
+        # set up fft functions for use later
+        if self.fftw: 
+            self.fft2 = (lambda x :
+                    pyfftw.interfaces.numpy_fft.rfft2(x, threads=self.ntd,\
+                            planner_effort='FFTW_ESTIMATE'))
+            self.ifft2 = (lambda x :
+                    pyfftw.interfaces.numpy_fft.irfft2(x, threads=self.ntd,\
+                            planner_effort='FFTW_ESTIMATE'))
+        else:
+            self.fft2 =  (lambda x : np.fft.rfft2(x))
+            self.ifft2 = (lambda x : np.fft.irfft2(x))
+
     def _initialize_grid(self):
         """ Initialize lattice and spectral space grid """
 
@@ -212,9 +234,9 @@ class LatticeModel(object):
     def _diffuse(self, n=1):
         """ Diffusion """
 
-        self.thh = np.fft.rfft2(self.th)
+        self.thh = self.fft2(self.th)
         self.thh = self.thh*exp(-(self.dt/n)*self.kappa*self.wv2)
-        self.th = np.fft.irfft2(self.thh)
+        self.th = self.ifft2(self.thh)
 
     def _advect(self):
         raise NotImplementedError(
@@ -283,7 +305,7 @@ class LatticeModel(object):
 
         self.add_diagnostic('spec',
             description='spec of anomalies about x-averaged flow',
-            function= (lambda self: np.abs(np.fft.rfft2(
+            function= (lambda self: np.abs(self.fft2(
                         self.th-self.th.mean(axis=1)[...,np.newaxis]))**2/self.M2)
         ) 
       
@@ -341,11 +363,11 @@ class LatticeModel(object):
 
         # anomaly about the x-averaged field
         self.tha = self.th-self.thm[...,np.newaxis]
-        self.thah = np.fft.rfft2(self.tha)
+        self.thah = self.fft2(self.tha)
 
         # x-averaged gradient squared
-        gradx = np.fft.irfft2(1j*self.k*self.thah)
-        grady = np.fft.irfft2(1j*self.l*self.thah)
+        gradx = self.ifft2(1j*self.k*self.thah)
+        grady = self.ifft2(1j*self.l*self.thah)
         self.gradth2m = (gradx**2 + grady**2).mean(axis=1)
 
         # triple term
