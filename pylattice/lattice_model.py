@@ -5,15 +5,15 @@ import logging
 
 try:
     import pyfftw
-    pyfftw.interfaces.cache.enable() 
+    pyfftw.interfaces.cache.enable()
 except ImportError:
     pass
 
 
 class LatticeModel(object):
     """ A generic two-dimensional lattice
-        model of advection-diffusion 
-        
+        model of advection-diffusion
+
         Attributes
         ----------
 
@@ -72,7 +72,7 @@ class LatticeModel(object):
         self.printcadence = printcadence
 
         self.kappa = kappa
-        
+
         self.nmin = nmin
         self.nmax = nmax
         self.power = power
@@ -93,11 +93,12 @@ class LatticeModel(object):
         self._init_velocity()
         self._allocate_variables()
         self._initialize_diagnostics()
+        self._initialize_nakamura()
 
         # some initial diagnostics
         self.Pe = self.urms/(self.kappa*self.kmin)
         self.dt = 1./(self.urms*self.kmin)
-        self.dt_2 = self.dt/2. 
+        self.dt_2 = self.dt/2.
 
         self.logger.info('dx/lb = %3.2e', self.dx/self.lb)
         self.logger.info('tau = %3.2e', self.dt)
@@ -107,16 +108,16 @@ class LatticeModel(object):
         """Run the model forward, yielding to user code at specified intervals.
             """
         tsnapint = np.ceil(tsnap/self.dt)
-        
+
         while(self.t < self.tmax):
             self._step_forward()
             if self.t>=tsnapstart and (self.tc%tsnapint)==0:
                 yield self.t
         return
-                
+
     def run(self):
         """Run the model forward without stopping until the end."""
-        while(self.t < self.tmax): 
+        while(self.t < self.tmax):
             self._step_forward()
 
     #
@@ -164,11 +165,11 @@ class LatticeModel(object):
     def _allocate_variables(self):
         """ Allocate variables in memory """
 
-        dtype_real = np.dtype('float64')            
+        dtype_real = np.dtype('float64')
         dtype_cplx = np.dtype('complex128')
         shape_real = (self.ny, self.nx)
         shape_cplx = (self.ny, self.nx/2+1)
-            
+
         # tracer concentration
         self.th  = np.zeros(shape_real, dtype_real)
         self.thh = np.zeros(shape_cplx, dtype_cplx)
@@ -192,15 +193,15 @@ class LatticeModel(object):
             self.logger.addHandler(fhandler)
 
         self.logger.setLevel(self.loglevel*10)
-        
+
         # this prevents the logger to propagate into the ipython notebook log
-        self.logger.propagate = False   
+        self.logger.propagate = False
 
         self.logger.info(' Logger initialized')
 
     def _initialize_fft(self):
         # set up fft functions for use later
-        if self.fftw: 
+        if self.fftw:
             self.fft2 = (lambda x :
                     pyfftw.interfaces.numpy_fft.rfft2(x, threads=self.ntd,\
                             planner_effort='FFTW_ESTIMATE'))
@@ -216,6 +217,7 @@ class LatticeModel(object):
 
         # physical space grids (the lattice)
         self.dx, self.dy = self.Lx/(self.nx), self.Ly/(self.ny)
+        self.dS = self.dx*self.dy
 
         self.x = np.linspace(0.,self.Lx-self.dx,self.nx)
         self.y = np.linspace(0.,self.Ly-self.dy,self.ny)
@@ -230,7 +232,7 @@ class LatticeModel(object):
         self.dl = 2.*pi/self.Ly
         self.nl = self.ny
         self.nk = self.nx/2+1
-        self.ll = self.dl*np.append( np.arange(0.,self.nx/2), 
+        self.ll = self.dl*np.append( np.arange(0.,self.nx/2),
             np.arange(-self.nx/2,0.) )
         self.kk = self.dk*np.arange(0.,self.nk)
 
@@ -253,7 +255,7 @@ class LatticeModel(object):
 
         phase = 2*pi*np.random.rand(2,self.nmax-self.nmin)
         phi, psi = phase[0], phase[1]
-    
+
         Yn = self.n*self.y[...,np.newaxis] + phase[0][np.newaxis,...]
         Xn = self.n*self.x[...,np.newaxis] + phase[1][np.newaxis,...]
 
@@ -268,7 +270,7 @@ class LatticeModel(object):
         self.n = np.arange(self.nmin,self.nmax)[np.newaxis,...]
         An = (self.n/self.nmin)**(-self.power/2.)
         N = 2*self.urms/( np.sqrt( ((self.n/self.nmin)**-self.power).sum() ) )
-        self.An = N*An 
+        self.An = N*An
 
         # estimate the Batchelor scale
         S = np.sqrt( ((self.An*self.n*self.dk)**2).sum()/2. )
@@ -285,11 +287,11 @@ class LatticeModel(object):
 
     def _advect(self):
         raise NotImplementedError(
-            'needs to be implemented by Model subclass') 
+            'needs to be implemented by Model subclass')
 
     def _source(self):
         raise NotImplementedError(
-            'needs to be implemented by Model subclass') 
+            'needs to be implemented by Model subclass')
 
     def _print_status(self):
         """Output some basic stats."""
@@ -297,8 +299,18 @@ class LatticeModel(object):
             self._calc_var()
             self.logger.info('Step: %4i, Time: %3.2e, Variance: %3.2e'
                     , self.tc,self.t,self.var)
-            
-    ## diagnostic methods 
+
+    ## diagnostic methods
+
+    def _initialize_nakamura(self):
+
+        self.Lmin2 = self.Lx**2
+        thm = self.G*self.y
+        thmin,thmax = thm.min(),thm.max()
+        self.dth = 0.1
+        self.dth2 = self.dth**2
+        self.TH = np.arange(thmin+self.dth/2,thmax-self.dth/2,self.dth)
+        self.Leq2 = np.empty(self.TH.size)
 
     def _calc_var(self):
         self.var = self.spec_var(self.thh)
@@ -306,13 +318,13 @@ class LatticeModel(object):
     def _calc_diagnostics(self):
         if (self.t>=self.dt) and (self.t>=self.tavestart):
             self._increment_diagnostics()
-         
+
     def _initialize_diagnostics(self):
         # Initialization for diagnotics
         self.diagnostics = dict()
-            
+
         self._setup_diagnostics()
-        
+
         if self.diagnostics_list == 'all':
             pass # by default, all diagnostics are active
         elif self.diagnostics_list == 'none':
@@ -327,7 +339,12 @@ class LatticeModel(object):
             description='Tracer variance',
             function= (lambda self: self.spec_var(self.thh))
         )
-    
+
+        self.add_diagnostic('KN',
+                    description='Nakamura diffusivity',
+                    function= (lambda self: (self.Leq2/self.Lmin2)*self.kappa)
+                )
+
         self.add_diagnostic('thbar',
             description='x-averaged tracer',
             function= (lambda self: self.thm)
@@ -352,7 +369,7 @@ class LatticeModel(object):
             description='x-averaged, y-direction tracer flux',
             function= (lambda self: (self.v*self.tha).mean(axis=1))
         )
-            
+
         self.add_diagnostic('fluxy',
             description='x-averaged, y-direction tracer flux',
             function= (lambda self: (self.v*self.th).mean(axis=1))
@@ -362,21 +379,21 @@ class LatticeModel(object):
             description='spec of anomalies about x-averaged flow',
             function= (lambda self: np.abs(self.fft2(
                         self.th-self.th.mean(axis=1)[...,np.newaxis]))**2/self.M2)
-        ) 
-      
+        )
+
     def _set_active_diagnostics(self, diagnostics_list):
         for d in self.diagnostics:
             self.diagnostics[d]['active'] == (d in diagnostics_list)
-            
+
     def add_diagnostic(self, diag_name, description=None, units=None, function=None):
         # create a new diagnostic dict and add it to the object array
-        
+
         # make sure the function is callable
         assert hasattr(function, '__call__')
-        
+
         # make sure the name is valid
         assert isinstance(diag_name, str)
-        
+
         # by default, diagnostic is active
         self.diagnostics[diag_name] = {
            'description': description,
@@ -384,7 +401,7 @@ class LatticeModel(object):
            'active': True,
            'count': 0,
            'function': function, }
-           
+
     def describe_diagnostics(self):
         """Print a human-readable summary of the available diagnostics."""
         diag_names = self.diagnostics.keys()
@@ -395,11 +412,11 @@ class LatticeModel(object):
             d = self.diagnostics[k]
             print('{:<10} | {:<54}').format(
                  *(k,  d['description']))
-           
+
     def _increment_diagnostics(self):
-        
+
         self._calc_derived_fields()
-        
+
         for dname in self.diagnostics:
             if self.diagnostics[dname]['active']:
                 res = self.diagnostics[dname]['function'](self)
@@ -423,7 +440,9 @@ class LatticeModel(object):
         # x-averaged gradient squared
         gradx = self.ifft2(1j*self.k*self.thah)
         grady = self.ifft2(1j*self.l*self.thah)
-        self.gradth2m = (gradx**2 + grady**2).mean(axis=1)
+
+        self.gradth2 = (gradx**2 + grady**2)
+        self.gradth2m = self.gradth2.mean(axis=1)
 
         # triple term
         self.vth2m = (self.v*(self.tha**2)).mean(axis=1)
@@ -431,8 +450,31 @@ class LatticeModel(object):
         # diff transport
         self.th2m = (self.tha**2).mean(axis=1)
 
+        # Leq2
+        self._calc_Leq2()
+
+    def _calc_Leq2(self):
+
+        th = self.th + self.G*self.y[...,np.newaxis]
+
+        # parallelize this...
+        for i in range(self.TH.size):
+
+            self.fth2 = th<=self.TH[i]+self.dth/2
+            self.fth1 = th<=self.TH[i]-self.dth/2
+
+            A2 = self.dS*self.fth2.sum()
+            A1 = self.dS*self.fth1.sum()
+            self.dA = A2-A1
+
+            self.G2 = (self.gradth2[self.fth2]*self.dS).sum()-\
+                      (self.gradth2[self.fth1]*self.dS).sum()
+
+            self.Leq2[i] = self.G2*self.dA/self.dth2
+
+
     def get_diagnostic(self, dname):
-        return (self.diagnostics[dname]['value'] / 
+        return (self.diagnostics[dname]['value'] /
                 self.diagnostics[dname]['count'])
 
     ## utility methods
@@ -455,5 +497,3 @@ class LatticeModel(object):
             Ab[i] = A[i*nave:(i+1)*nave].mean()
 
         return Ab
-
-
