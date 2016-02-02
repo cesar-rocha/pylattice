@@ -453,9 +453,14 @@ class LatticeModel(object):
         # Leq2
         self._calc_Leq2()
 
-    def _calc_Leq2(self):
+    def _calc_Leq2(self,npad=4):
 
         th = self.th + self.G*self.y[...,np.newaxis]
+
+        th = np.vstack([(th[self.nx-self.nx/npad:]-2*pi),th,\
+                        th[:self.nx/npad]+2*pi])
+        gradth2 =  np.vstack([self.gradth2[self.nx-self.nx/npad:],\
+                              self.gradth2,self.gradth2[:self.nx/npad]])
 
         # parallelize this...
         for i in range(self.TH.size):
@@ -467,8 +472,8 @@ class LatticeModel(object):
             A1 = self.dS*self.fth1.sum()
             self.dA = A2-A1
 
-            self.G2 = (self.gradth2[self.fth2]*self.dS).sum()-\
-                      (self.gradth2[self.fth1]*self.dS).sum()
+            self.G2 = (gradth2[self.fth2]*self.dS).sum()-\
+                      (gradth2[self.fth1]*self.dS).sum()
 
             self.Leq2[i] = self.G2*self.dA/self.dth2
 
