@@ -453,30 +453,9 @@ class LatticeModel(object):
         # Leq2
         self._calc_Leq2()
 
-    def _calc_Leq2(self,npad=4):
-
-        th = self.th + self.G*self.y[...,np.newaxis]
-
-        th = np.vstack([(th[self.nx-self.nx/npad:]-2*pi),th,\
-                        th[:self.nx/npad]+2*pi])
-        gradth2 =  np.vstack([self.gradth2[self.nx-self.nx/npad:],\
-                              self.gradth2,self.gradth2[:self.nx/npad]])
-
-        # parallelize this...
-        for i in range(self.TH.size):
-
-            self.fth2 = th<=self.TH[i]+self.dth/2
-            self.fth1 = th<=self.TH[i]-self.dth/2
-
-            A2 = self.dS*self.fth2.sum()
-            A1 = self.dS*self.fth1.sum()
-            self.dA = A2-A1
-
-            self.G2 = (gradth2[self.fth2]*self.dS).sum()-\
-                      (gradth2[self.fth1]*self.dS).sum()
-
-            self.Leq2[i] = self.G2*self.dA/self.dth2
-
+    def _calc_Leq2(self):
+        raise NotImplementedError(
+            'needs to be implemented by Model subclass')
 
     def get_diagnostic(self, dname):
         return (self.diagnostics[dname]['value'] /

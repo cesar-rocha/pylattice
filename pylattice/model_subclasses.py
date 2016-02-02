@@ -4,8 +4,8 @@ from numpy import pi
 
 class SourceModel(lattice_model.LatticeModel):
     """ A subclass that represents the advection-diffusion
-            model with a large-scale source 
-    
+            model with a large-scale source
+
         Attributes
         ----------
         source: flag for source (boolean)
@@ -67,9 +67,10 @@ class GyModel(lattice_model.LatticeModel):
             model with a basic state sustained by a linear
             mean constant mean gradient """
 
-    def __init__(self, G=1., **kwargs):
+    def __init__(self, G=1., npad=4, **kwargs):
 
         self.G = G
+        self.npad = npad
 
         super(GyModel, self).__init__(**kwargs)
 
@@ -97,8 +98,31 @@ class GyModel(lattice_model.LatticeModel):
             iy_new  = self.iy + dindy
             iy_new[iy_new<0] = iy_new[iy_new<0] + self.ny
             iy_new[iy_new>self.ny-1] = iy_new[iy_new>self.ny-1] - self.ny
-            self.th = self.th[iy_new,self.ix] + self.G*self.v*self.dt_2/n 
-    
+            self.th = self.th[iy_new,self.ix] + self.G*self.v*self.dt_2/n
+
     def _source(self,direction='x',n=1):
         pass
 
+    def _calc_Leq2(self):
+
+        th = self.th + self.G*self.y[...,np.newaxis]
+
+        th = np.vstack([(th[self.nx-self.nx/self.npad:]-2*pi),th,\
+                        th[:self.nx/self.npad]+2*pi])
+        gradth2 =  np.vstack([self.gradth2[self.nx-self.nx/self.npad:],\
+                              self.gradth2,self.gradth2[:self.nx/self.npad]])
+
+        # parallelize this...
+        for i in range(self.TH.size):
+
+            self.fth2 = th<=self.TH[i]+self.dth/2
+            self.fth1 = th<=self.TH[i]-self.dth/2
+
+            A2 = self.dS*self.fth2.sum()
+            A1 = self.dS*self.fth1.sum()
+            self.dA = A2-A1
+
+            self.G2 = (gradth2[self.fth2]*self.dS).sum()-\
+                      (gradth2[self.fth1]*self.dS).sum()
+
+            self.Leq2[i] = self.G2*self.dA/self.dth2
