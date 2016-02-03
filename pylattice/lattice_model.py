@@ -137,25 +137,32 @@ class LatticeModel(object):
         # x-dir
         self._advect(direction='x',n=2)
         self._source(direction='x',n=4)
+        self.th1 = self.th.copy()
         self._calc_diagnostics()
         self._diffuse(n=4)
         self._calc_diagnostics()
+        self.th2 = self.th.copy()
 
         self._advect(direction='x',n=2)
         self._source(direction='x',n=4)
         self._calc_diagnostics()
+        self.th3 = self.th.copy()
         self._diffuse(n=4)
         self._calc_diagnostics()
+        self.th4 = self.th.copy()
 
         # y-dir
         self._advect(direction='y',n=2)
         self._source(direction='y',n=4)
         self._calc_diagnostics()
+        self.th5 = self.th.copy()
         self._diffuse(n=4)
         self._calc_diagnostics()
+        self.th6 = self.th.copy()
         self._advect(direction='y',n=2)
         self._source(direction='y',n=4)
         self._calc_diagnostics()
+        self.th7 = self.th.copy()
         self._diffuse(n=4)
         self._calc_diagnostics()
 

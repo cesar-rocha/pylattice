@@ -22,9 +22,12 @@ class SourceModel(lattice_model.LatticeModel):
         """ Advect th on a lattice given u and v,
             and the current index array ix, iy
 
-            n is the number of substeps
-            n=1 for doing the full advection-diffusion,
-            n=2 for doing half the advection, etc """
+            Attributes
+            ----------
+            direction: direction to perform the advection ('x' or 'y')
+            n: the number of substeps
+               n=1 for doing the full advection-diffusion;
+               n=2 for doing half the advection; etc """
 
         if direction == 'x':
             ix_new = self.ix.copy()
@@ -79,9 +82,12 @@ class GyModel(lattice_model.LatticeModel):
         """ Advect th on a lattice given u and v,
             and the current index array ix, iy
 
-            n is the number of substeps
-            n=1 for doing the full advection-diffusion,
-            n=2 for doing half the advection, etc """
+            Attributes
+            ----------
+            direction: direction to perform the advection ('x' or 'y')
+            n: the number of substeps
+               n=1 for doing the full advection-diffusion;
+               n=2 for doing half the advection; etc """
 
         if direction == 'x':
             ix_new = self.ix.copy()
