@@ -118,6 +118,8 @@ class GyModel(lattice_model.LatticeModel):
         gradth2 =  np.vstack([self.gradth2[self.nx-self.nx/self.npad:],\
                               self.gradth2,self.gradth2[:self.nx/self.npad]])
 
+        gradth = np.sqrt(gradth2)
+
         # parallelize this...
         for i in range(self.TH.size):
 
@@ -132,3 +134,6 @@ class GyModel(lattice_model.LatticeModel):
                       (gradth2[self.fth1]*self.dS).sum()
 
             self.Leq2[i] = self.G2*self.dA/self.dth2
+
+            self.L[i] = ((gradth[self.fth2]*self.dS).sum()-\
+                        (gradth[self.fth1]*self.dS).sum())/self.dth

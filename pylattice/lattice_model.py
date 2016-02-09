@@ -52,7 +52,8 @@ class LatticeModel(object):
                 ntd=4,
                 logfile=None,
                 loglevel=1,
-                printcadence = 10):
+                printcadence = 10,
+                diaglog = True):
 
         if ny is None: ny = nx
         if Ly is None: Ly = Lx
@@ -83,6 +84,8 @@ class LatticeModel(object):
 
         self.logfile = logfile
         self.loglevel=loglevel
+
+        self.diaglog = diaglog
 
         # initializations
         self.diagnostics_list = diagnostics_list
@@ -129,40 +132,42 @@ class LatticeModel(object):
         # status
         self._print_status()
 
-        # renovate velocity field
-        self._velocity()
+        # use a smart while loop here...
 
-        # use a while loop here...
+        self._velocity(dir='x')
 
         # x-dir
         self._advect(direction='x',n=2)
         self._source(direction='x',n=4)
-        self.th1 = self.th.copy()
+        #self.th1 = self.th.copy()
         self._calc_diagnostics()
         self._diffuse(n=4)
         self._calc_diagnostics()
-        self.th2 = self.th.copy()
+        #self.th2 = self.th.copy()
 
         self._advect(direction='x',n=2)
         self._source(direction='x',n=4)
         self._calc_diagnostics()
-        self.th3 = self.th.copy()
+        #self.th3 = self.th.copy()
         self._diffuse(n=4)
         self._calc_diagnostics()
-        self.th4 = self.th.copy()
+        #self.th4 = self.th.copy()
 
         # y-dir
+
+        self._velocity(dir='y')
+
         self._advect(direction='y',n=2)
         self._source(direction='y',n=4)
         self._calc_diagnostics()
-        self.th5 = self.th.copy()
+        #self.th5 = self.th.copy()
         self._diffuse(n=4)
         self._calc_diagnostics()
-        self.th6 = self.th.copy()
+        #self.th6 = self.th.copy()
         self._advect(direction='y',n=2)
         self._source(direction='y',n=4)
         self._calc_diagnostics()
-        self.th7 = self.th.copy()
+        #self.th7 = self.th.copy()
         self._diffuse(n=4)
         self._calc_diagnostics()
 
@@ -258,19 +263,18 @@ class LatticeModel(object):
         self.kmin = self.dk*self.nmin
         self.kmax = self.dk*self.nmax
 
-    def _velocity(self):
+    def _velocity(self,dir='x'):
 
-        phase = 2*pi*np.random.rand(2,self.nmax-self.nmin)
-        phi, psi = phase[0], phase[1]
+        phase = 2*pi*np.random.rand(self.nmax-self.nmin)
 
-        Yn = self.n*self.y[...,np.newaxis] + phase[0][np.newaxis,...]
-        Xn = self.n*self.x[...,np.newaxis] + phase[1][np.newaxis,...]
-
-        u = (self.An*cos(Yn*self.dl)).sum(axis=1)
-        v = (self.An*cos(Xn*self.dk)).sum(axis=1)
-
-        self.u = u[...,np.newaxis]
-        self.v = v[np.newaxis,...]
+        if dir == 'x':
+            Yn = self.n*self.y[...,np.newaxis] + phase[np.newaxis,...]
+            self.u = ((self.An*cos(Yn*self.dl)).sum(axis=1))[...,np.newaxis]
+            self.v = np.zeros(self.nx)[np.newaxis,...]
+        elif dir == 'y':
+            Xn = self.n*self.x[...,np.newaxis] + phase[np.newaxis,...]
+            self.v = ((self.An*cos(Xn*self.dk)).sum(axis=1))[np.newaxis,...]
+            self.u = np.zeros(self.nx)[...,np.newaxis]
 
     def _init_velocity(self):
 
@@ -308,7 +312,6 @@ class LatticeModel(object):
                     , self.tc,self.t,self.var)
 
     ## diagnostic methods
-
     def _initialize_nakamura(self):
 
         self.Lmin2 = self.Lx**2
@@ -318,6 +321,7 @@ class LatticeModel(object):
         self.dth2 = self.dth**2
         self.TH = np.arange(thmin+self.dth/2,thmax-self.dth/2,self.dth)
         self.Leq2 = np.empty(self.TH.size)
+        self.L = np.empty(self.TH.size)
 
     def _calc_var(self):
         self.var = self.spec_var(self.thh)
@@ -374,8 +378,8 @@ class LatticeModel(object):
 
         self.add_diagnostic('vthm',
             description='x-averaged, y-direction tracer flux',
-            function= (lambda self: (self.v*self.tha).mean(axis=1))
-        )
+            function= (lambda self: (self.v*self.th).mean(axis=1))
+        )  ### cu
 
         self.add_diagnostic('fluxy',
             description='x-averaged, y-direction tracer flux',
@@ -427,6 +431,8 @@ class LatticeModel(object):
         for dname in self.diagnostics:
             if self.diagnostics[dname]['active']:
                 res = self.diagnostics[dname]['function'](self)
+                if self.diaglog and (dname=='KN' or dname=='grad2_th_bar'):
+                    res = np.log(res)
                 if self.diagnostics[dname]['count']==0:
                     self.diagnostics[dname]['value'] = res
                 else:
@@ -441,7 +447,7 @@ class LatticeModel(object):
         self.thm = self.th.mean(axis=1)
 
         # anomaly about the x-averaged field
-        self.tha = self.th-self.thm[...,np.newaxis]
+        self.tha = self.th -self.thm[...,np.newaxis]*0
         self.thah = self.fft2(self.tha)
 
         # x-averaged gradient squared
@@ -465,11 +471,14 @@ class LatticeModel(object):
             'needs to be implemented by Model subclass')
 
     def get_diagnostic(self, dname):
-        return (self.diagnostics[dname]['value'] /
-                self.diagnostics[dname]['count'])
+        diag = (self.diagnostics[dname]['value'] /
+                 self.diagnostics[dname]['count'])
+        if self.diaglog and (dname=='KN' or dname=='grad2_th_bar'):
+            return np.exp(diag)
+        else:
+            return  diag
 
     ## utility methods
-
     def spec_var(self, ph):
         """ compute variance of p from Fourier coefficients ph """
         var_dens = 2. * np.abs(ph)**2 / self.M**2
