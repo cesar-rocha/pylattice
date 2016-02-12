@@ -265,20 +265,22 @@ class LatticeModel(object):
 
     def _velocity(self,dir='x'):
 
-        phase = 2*pi*np.random.rand(self.nmax-self.nmin)
+        phase = 2*pi*np.random.rand(self.nmax+1-self.nmin)
 
         if dir == 'x':
-            Yn = self.n*self.y[...,np.newaxis] + phase[np.newaxis,...]
-            self.u = ((self.An*cos(Yn*self.dl)).sum(axis=1))[...,np.newaxis]
+            #Yn = self.n*self.y[...,np.newaxis] + phase[np.newaxis,...]
+            Yn = self.n*self.y[...,np.newaxis]
+            self.u = ((self.An*cos(Yn*self.dl + + phase[np.newaxis,...])).sum(axis=1))[...,np.newaxis]
             self.v = np.zeros(self.nx)[np.newaxis,...]
         elif dir == 'y':
-            Xn = self.n*self.x[...,np.newaxis] + phase[np.newaxis,...]
-            self.v = ((self.An*cos(Xn*self.dk)).sum(axis=1))[np.newaxis,...]
+            #Xn = self.n*self.x[...,np.newaxis] + phase[np.newaxis,...]
+            Xn = self.n*self.x[...,np.newaxis]
+            self.v = ((self.An*cos(Xn*self.dk+phase[np.newaxis,...])).sum(axis=1))[np.newaxis,...]
             self.u = np.zeros(self.nx)[...,np.newaxis]
 
     def _init_velocity(self):
 
-        self.n = np.arange(self.nmin,self.nmax)[np.newaxis,...]
+        self.n = np.arange(self.nmin,self.nmax+1)[np.newaxis,...]
         An = (self.n/self.nmin)**(-self.power/2.)
         N = 2*self.urms/( np.sqrt( ((self.n/self.nmin)**-self.power).sum() ) )
         self.An = N*An
