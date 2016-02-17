@@ -9,7 +9,8 @@ def calc_Koc(model):
 
     grad2 =  model.get_diagnostic('grad2_th_bar')
 
-    cby2 = 1.
+    if model.Gy:
+        cby2 = 1.
 
     Koc = (grad2/cby2)*model.kappa
     D = (model.urms**2)*model.dt/4.
@@ -22,10 +23,11 @@ def variance_budget(model):
     # calculate the Koc
     thm = model.get_diagnostic('thbar')
     thmh = np.fft.rfft(thm)
-    thmy = np.fft.irfft(1j*model.kk*thmh) + model.G
+    thmy = np.fft.irfft(1j*model.kk*thmh)
     cby2 = thmy**2
 
-    cby2 = 1.
+    if model.Gy:
+        cby2 = model.G**2
 
     th2 = model.get_diagnostic('th2m')
     th2h = np.fft.rfft(th2)
@@ -44,7 +46,7 @@ def variance_budget(model):
 
     var_trans = -vth2y/2.
     eddy_diff2 = vthm*thmy
-    eddy_diff= Koc*(model.G**2)
+    eddy_diff= Koc*(cby2**2)
 
     diff_trans = model.kappa*th2yy/2.
     diff = -model.kappa*grad2

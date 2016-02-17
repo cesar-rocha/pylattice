@@ -53,7 +53,8 @@ class LatticeModel(object):
                 logfile=None,
                 loglevel=1,
                 printcadence = 10,
-                diaglog = True):
+                diaglog = True,
+                npad=4):
 
         if ny is None: ny = nx
         if Ly is None: Ly = Lx
@@ -87,6 +88,8 @@ class LatticeModel(object):
 
         self.diaglog = diaglog
 
+        self.npad = npad
+
         # initializations
         self.diagnostics_list = diagnostics_list
 
@@ -96,16 +99,21 @@ class LatticeModel(object):
         self._init_velocity()
         self._allocate_variables()
         self._initialize_diagnostics()
-        self._initialize_nakamura()
 
         # some initial diagnostics
         self.Pe = self.urms/(self.kappa*self.kmin)
         self.dt = 1./(self.urms*self.kmin)
         self.dt_2 = self.dt/2.
+        self.D = (self.urms**2)*self.dt/4.
 
         self.logger.info('dx/lb = %3.2e', self.dx/self.lb)
         self.logger.info('tau = %3.2e', self.dt)
+        self.logger.info('tau S = %3.2e', self.dt*self.S)
         self.logger.info('Pe = %3.2e', self.Pe)
+        self.logger.info('D = %3.2e', self.D)
+
+        self._initialize_nakamura()
+
 
     def run_with_snapshots(self, tsnapstart=0., tsnap=1):
         """Run the model forward, yielding to user code at specified intervals.
@@ -134,6 +142,7 @@ class LatticeModel(object):
 
         # use a smart while loop here...
 
+        self.var = 0.
         self._velocity(dir='x')
 
         # x-dir
@@ -141,17 +150,21 @@ class LatticeModel(object):
         self._source(direction='x',n=4)
         #self.th1 = self.th.copy()
         self._calc_diagnostics()
+        self.var += self.spec_var(self.thh)
         self._diffuse(n=4)
         self._calc_diagnostics()
         #self.th2 = self.th.copy()
+        self.var += self.spec_var(self.thh)
 
         self._advect(direction='x',n=2)
         self._source(direction='x',n=4)
         self._calc_diagnostics()
+        self.var += self.spec_var(self.thh)
         #self.th3 = self.th.copy()
         self._diffuse(n=4)
         self._calc_diagnostics()
         #self.th4 = self.th.copy()
+        self.var += self.spec_var(self.thh)
 
         # y-dir
 
@@ -160,16 +173,21 @@ class LatticeModel(object):
         self._advect(direction='y',n=2)
         self._source(direction='y',n=4)
         self._calc_diagnostics()
+        self.var += self.spec_var(self.thh)
         #self.th5 = self.th.copy()
         self._diffuse(n=4)
         self._calc_diagnostics()
+        self.var += self.spec_var(self.thh)
         #self.th6 = self.th.copy()
         self._advect(direction='y',n=2)
         self._source(direction='y',n=4)
         self._calc_diagnostics()
+        self.var += self.spec_var(self.thh)
         #self.th7 = self.th.copy()
         self._diffuse(n=4)
         self._calc_diagnostics()
+        self.var += self.spec_var(self.thh)
+        self.var = self.var/8.
 
         self.tc += 1
         self.t += self.dt
@@ -286,8 +304,8 @@ class LatticeModel(object):
         self.An = N*An
 
         # estimate the Batchelor scale
-        S = np.sqrt( ((self.An*self.n*self.dk)**2).sum()/2. )
-        self.lb = np.sqrt(self.kappa/S)
+        self.S = np.sqrt( ((self.An*self.n*self.dk)**2).sum()/2. )
+        self.lb = np.sqrt(self.kappa/self.S)
 
         #assert self.lb > self.dx, "**Warning: Batchelor scale not resolved."
 
@@ -315,15 +333,8 @@ class LatticeModel(object):
 
     ## diagnostic methods
     def _initialize_nakamura(self):
-
-        self.Lmin2 = self.Lx**2
-        thm = self.G*self.y
-        thmin,thmax = thm.min(),thm.max()
-        self.dth = 0.1
-        self.dth2 = self.dth**2
-        self.TH = np.arange(thmin+self.dth/2,thmax-self.dth/2,self.dth)
-        self.Leq2 = np.empty(self.TH.size)
-        self.L = np.empty(self.TH.size)
+        raise NotImplementedError(
+            'needs to be implemented by Model subclass')
 
     def _calc_var(self):
         self.var = self.spec_var(self.thh)

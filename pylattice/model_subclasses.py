@@ -15,6 +15,7 @@ class SourceModel(lattice_model.LatticeModel):
     def __init__(self, source=True, **kwargs):
 
         self.source = source
+        self.Gy = False
 
         super(SourceModel, self).__init__(**kwargs)
 
@@ -65,15 +66,57 @@ class SourceModel(lattice_model.LatticeModel):
             self.th += (self.dt/n)*np.cos(self.dl*self.y)[...,np.newaxis]
             #pass
 
+    ## diagnostic methods
+    def _initialize_nakamura(self):
+        self.Lmin2 = self.Lx**2
+        # this 2 is arbitrary here...
+        thm = np.cos(self.dl*self.y)/(self.D*(self.dl**2))
+        thmin,thmax = thm.min(),thm.max()
+        self.dth = 0.1
+        self.dth2 = self.dth**2
+        self.TH = np.arange(thmin+self.dth/2,thmax-self.dth/2,self.dth)
+        self.Leq2 = np.empty(self.TH.size)
+        self.L = np.empty(self.TH.size)
+
+    def _calc_Leq2(self):
+
+        th = self.th
+
+        #th = np.vstack([(th[self.nx-self.nx/self.npad:]),th,\
+        #                th[:self.nx/self.npad]])
+        #gradth2 =  np.vstack([self.gradth2[self.nx-self.nx/self.npad:],\
+        #                      self.gradth2,self.gradth2[:self.nx/self.npad]])
+        gradth2 = self.gradth2
+
+        gradth = np.sqrt(gradth2)
+
+        # parallelize this...
+        for i in range(self.TH.size):
+
+            self.fth2 = th<=self.TH[i]+self.dth/2
+            self.fth1 = th<=self.TH[i]-self.dth/2
+
+            A2 = self.dS*self.fth2.sum()
+            A1 = self.dS*self.fth1.sum()
+            self.dA = A2-A1
+
+            self.G2 = (gradth2[self.fth2]*self.dS).sum()-\
+                      (gradth2[self.fth1]*self.dS).sum()
+
+            self.Leq2[i] = self.G2*self.dA/self.dth2
+
+            self.L[i] = ((gradth[self.fth2]*self.dS).sum()-\
+                        (gradth[self.fth1]*self.dS).sum())/self.dth
+
 class GyModel(lattice_model.LatticeModel):
     """ A subclass that represents the advection-diffusion
             model with a basic state sustained by a linear
             mean constant mean gradient """
 
-    def __init__(self, G=1., npad=4, **kwargs):
+    def __init__(self, G=1., **kwargs):
 
         self.G = G
-        self.npad = npad
+        self.Gy = True
 
         super(GyModel, self).__init__(**kwargs)
 
@@ -108,6 +151,18 @@ class GyModel(lattice_model.LatticeModel):
 
     def _source(self,direction='x',n=1):
         pass
+
+    ## diagnostic methods
+    def _initialize_nakamura(self):
+        self.Lmin2 = self.Lx**2
+        thm = self.G*self.y
+        thmin,thmax = thm.min(),thm.max()
+        self.dth = 0.1
+        self.dth2 = self.dth**2
+        self.TH = np.arange(thmin+self.dth/2,thmax-self.dth/2,self.dth)
+        self.Leq2 = np.empty(self.TH.size)
+        self.L = np.empty(self.TH.size)
+
 
     def _calc_Leq2(self):
 
