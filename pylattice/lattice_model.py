@@ -369,6 +369,17 @@ class LatticeModel(object):
                     function= (lambda self: (self.Leq2/self.Lmin2)*self.kappa)
                 )
 
+        self.add_diagnostic('I1',
+                    description='I1',
+                    function= (lambda self: self.I1)
+                )
+
+        self.add_diagnostic('I2',
+                    description='I2',
+                    function= (lambda self: self.I1)
+                )
+
+
         self.add_diagnostic('thbar',
             description='x-averaged tracer',
             function= (lambda self: self.thm)

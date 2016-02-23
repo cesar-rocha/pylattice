@@ -76,6 +76,8 @@ class SourceModel(lattice_model.LatticeModel):
         self.dth2 = self.dth**2
         self.TH = np.arange(thmin+self.dth/2,thmax-self.dth/2,self.dth)
         self.Leq2 = np.empty(self.TH.size)
+        self.I1 = np.empty(self.TH.size)
+        self.I2 = np.empty(self.TH.size)
         self.L = np.empty(self.TH.size)
 
     def _calc_Leq2(self):
@@ -107,6 +109,10 @@ class SourceModel(lattice_model.LatticeModel):
 
             self.L[i] = ((gradth[self.fth2]*self.dS).sum()-\
                         (gradth[self.fth1]*self.dS).sum())/self.dth
+
+            self.I1[i] = self.G2/self.dth
+            self.I2[i] = self.dA/self.dth
+
 
 class GyModel(lattice_model.LatticeModel):
     """ A subclass that represents the advection-diffusion
@@ -161,6 +167,8 @@ class GyModel(lattice_model.LatticeModel):
         self.dth2 = self.dth**2
         self.TH = np.arange(thmin+self.dth/2,thmax-self.dth/2,self.dth)
         self.Leq2 = np.empty(self.TH.size)
+        self.I1 = np.empty(self.TH.size)
+        self.I2 = np.empty(self.TH.size)
         self.L = np.empty(self.TH.size)
 
 
@@ -189,6 +197,9 @@ class GyModel(lattice_model.LatticeModel):
                       (gradth2[self.fth1]*self.dS).sum()
 
             self.Leq2[i] = self.G2*self.dA/self.dth2
+
+            self.I1[i] = self.G2/self.dth
+            self.I2[i] = self.dA/self.dth
 
             self.L[i] = ((gradth[self.fth2]*self.dS).sum()-\
                         (gradth[self.fth1]*self.dS).sum())/self.dth
