@@ -84,12 +84,11 @@ class SourceModel(lattice_model.LatticeModel):
 
         th = self.th
 
-        #th = np.vstack([(th[self.nx-self.nx/self.npad:]),th,\
-        #                th[:self.nx/self.npad]])
-        #gradth2 =  np.vstack([self.gradth2[self.nx-self.nx/self.npad:],\
-        #                      self.gradth2,self.gradth2[:self.nx/self.npad]])
-        gradth2 = self.gradth2
-
+        th = np.vstack([(th[self.nx-self.nx/self.npad:]),th,\
+                        th[:self.nx/self.npad]])
+        gradth2 =  np.vstack([self.gradth2[self.nx-self.nx/self.npad:],\
+                              self.gradth2,self.gradth2[:self.nx/self.npad]])
+        
         gradth = np.sqrt(gradth2)
 
         # parallelize this...
@@ -161,19 +160,22 @@ class GyModel(lattice_model.LatticeModel):
     ## diagnostic methods
     def _initialize_nakamura(self):
         self.Lmin2 = self.Lx**2
-        thm = self.G*self.y
-        thmin,thmax = thm.min(),thm.max()
-        self.dth = 0.1
+        th = self.G*self.y
+        #thmin,thmax = th.min(),th.max()
+        thmin,thmax = -10*pi,10*pi
+        self.dth = 0.2
         self.dth2 = self.dth**2
-        self.TH = np.arange(thmin+self.dth/2,thmax-self.dth/2,self.dth)
+        #self.TH = np.arange(thmin+self.dth/2,thmax-self.dth/2,self.dth)
+        self.TH = np.arange(thmin,thmax,self.dth)
         self.Leq2 = np.empty(self.TH.size)
         self.I1 = np.empty(self.TH.size)
         self.I2 = np.empty(self.TH.size)
         self.L = np.empty(self.TH.size)
+        self.A = np.empty(self.TH.size)
 
 
     def _calc_Leq2(self):
-
+        
         th = self.th + self.G*self.y[...,np.newaxis]
 
         th = np.vstack([(th[self.nx-self.nx/self.npad:]-2*pi),th,\
@@ -181,13 +183,18 @@ class GyModel(lattice_model.LatticeModel):
         gradth2 =  np.vstack([self.gradth2[self.nx-self.nx/self.npad:],\
                               self.gradth2,self.gradth2[:self.nx/self.npad]])
 
+        #gradth2 = self.gradth2
+
         gradth = np.sqrt(gradth2)
 
         # parallelize this...
         for i in range(self.TH.size):
 
-            self.fth2 = th<=self.TH[i]+self.dth/2
-            self.fth1 = th<=self.TH[i]-self.dth/2
+            #self.fth2 = th<=self.TH[i]+self.dth/2
+            #self.fth1 = th<=self.TH[i]-self.dth/2
+            self.fth2 = th<=self.TH[i]+self.dth
+            self.fth1 = th<=self.TH[i]
+
 
             A2 = self.dS*self.fth2.sum()
             A1 = self.dS*self.fth1.sum()
@@ -203,3 +210,5 @@ class GyModel(lattice_model.LatticeModel):
 
             self.L[i] = ((gradth[self.fth2]*self.dS).sum()-\
                         (gradth[self.fth1]*self.dS).sum())/self.dth
+
+            self.A[i] = A2 

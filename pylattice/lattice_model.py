@@ -1,6 +1,7 @@
 from __future__ import division
 import numpy as np
 from numpy import pi, cos, sin, exp
+import scipy as sp
 import logging
 
 try:
@@ -94,10 +95,10 @@ class LatticeModel(object):
         self.diagnostics_list = diagnostics_list
 
         self._initialize_logger()
+        self._allocate_variables()
         self._initialize_fft()
         self._initialize_grid()
         self._init_velocity()
-        self._allocate_variables()
         self._initialize_diagnostics()
 
         # some initial diagnostics
@@ -195,14 +196,14 @@ class LatticeModel(object):
     def _allocate_variables(self):
         """ Allocate variables in memory """
 
-        dtype_real = np.dtype('float64')
-        dtype_cplx = np.dtype('complex128')
-        shape_real = (self.ny, self.nx)
-        shape_cplx = (self.ny, self.nx/2+1)
+        self.dtype_real = np.dtype('float64')
+        self.dtype_cplx = np.dtype('complex128')
+        self.shape_real = (self.ny, self.nx)
+        self.shape_cplx = (self.ny, self.nx/2+1)
 
         # tracer concentration
-        self.th  = np.zeros(shape_real, dtype_real)
-        self.thh = np.zeros(shape_cplx, dtype_cplx)
+        self.th  = np.zeros(self.shape_real, self.dtype_real)
+        self.thh = np.zeros(self.shape_cplx, self.dtype_cplx)
 
     # logger
     def _initialize_logger(self):
@@ -229,18 +230,45 @@ class LatticeModel(object):
 
         self.logger.info(' Logger initialized')
 
+#    def _initialize_fft(self):
+#        # set up fft functions for use later
+#        if self.fftw:
+#            self.fft2 = (lambda x :
+#                    pyfftw.interfaces.numpy_fft.rfft2(x, threads=self.ntd,\
+#                            planner_effort='FFTW_ESTIMATE'))
+#            self.ifft2 = (lambda x :
+#                    pyfftw.interfaces.numpy_fft.irfft2(x, threads=self.ntd,\
+#                            planner_effort='FFTW_ESTIMATE'))
+#        else:
+#            self.fft2 =  (lambda x : np.fft.rfft2(x))
+#            self.ifft2 = (lambda x : np.fft.irfft2(x))
+#
     def _initialize_fft(self):
+
         # set up fft functions for use later
         if self.fftw:
+
+            A = pyfftw.n_byte_align_empty(self.shape_real, pyfftw.simd_alignment,\
+                                          dtype=self.dtype_real)
+            Ah = pyfftw.n_byte_align_empty(self.shape_cplx, pyfftw.simd_alignment,\
+                                          dtype=self.dtype_cplx)
+
             self.fft2 = (lambda x :
                     pyfftw.interfaces.numpy_fft.rfft2(x, threads=self.ntd,\
-                            planner_effort='FFTW_ESTIMATE'))
+                            planner_effort='FFTW_MEASURE'))
             self.ifft2 = (lambda x :
                     pyfftw.interfaces.numpy_fft.irfft2(x, threads=self.ntd,\
-                            planner_effort='FFTW_ESTIMATE'))
-        else:
-            self.fft2 =  (lambda x : np.fft.rfft2(x))
-            self.ifft2 = (lambda x : np.fft.irfft2(x))
+                            planner_effort='FFTW_MEASURE'))
+
+            # Forward transforms
+            self.A2Ah = pyfftw.builders.rfft2(A,threads=self.ntd,\
+                            planner_effort='FFTW_MEASURE')
+
+            # Backward transforms
+            self.Ah2A = pyfftw.builders.irfft2(Ah,threads=self.ntd,\
+                            planner_effort='FFTW_MEASURE')
+
+            del A, Ah
 
     def _initialize_grid(self):
         """ Initialize lattice and spectral space grid """
@@ -312,9 +340,12 @@ class LatticeModel(object):
     def _diffuse(self, n=1):
         """ Diffusion """
 
-        self.thh = self.fft2(self.th)
+        #self.thh = self.fft2(self.th)
+        self.thh = self.A2Ah(self.th)
         self.thh = self.thh*exp(-(self.dt/n)*self.kappa*self.wv2)
-        self.th = self.ifft2(self.thh)
+        self.thho = self.thh.copy()
+        #self.th = self.ifft2(self.thh)
+        self.th = self.Ah2A(self.thho)
 
     def _advect(self):
         raise NotImplementedError(
@@ -371,12 +402,12 @@ class LatticeModel(object):
 
         self.add_diagnostic('I1',
                     description='I1',
-                    function= (lambda self: self.I1)
+                    function= (lambda self: sp.integrate.simps(self.I1,self.TH)/(1+ 2./self.npad))
                 )
 
         self.add_diagnostic('I2',
                     description='I2',
-                    function= (lambda self: self.I2)
+                    function= (lambda self: sp.integrate.simps(self.I2,self.TH)/(1+ 2./self.npad))
                 )
         
         self.add_diagnostic('L2',
