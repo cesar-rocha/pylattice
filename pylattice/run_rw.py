@@ -17,7 +17,6 @@ ix,iy = x.shape
 x = x.reshape(1,ix*iy).squeeze()
 y = y.reshape(1,ix*iy).squeeze()
 
-
 m = model.RWAdvection(kappa=1.e-4,dt=.1,tmax=50,R=2,x=x,y=y)
 
 for snapshot in m.run_with_snapshots(tsnapstart=0, tsnap=m.dt):
