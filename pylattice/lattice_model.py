@@ -438,7 +438,7 @@ class LatticeModel(object):
         self.add_diagnostic('vthm',
             description='x-averaged, y-direction tracer flux',
             function= (lambda self: (self.v*self.th).mean(axis=1))
-        )  ### cu
+        )
 
         self.add_diagnostic('fluxy',
             description='x-averaged, y-direction tracer flux',
